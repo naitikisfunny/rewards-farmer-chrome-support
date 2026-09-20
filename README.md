@@ -1,6 +1,6 @@
 # User0332/rewards-farmer
 
-hi uhh i made this script to have chrome support so y'all can run this on termux mobile!
+hi uhh i made this script to have chrome support so y'all can run this on termux mobile! (didn't changed much of readme.md)
 
 # Running Instructions
 
