@@ -6,7 +6,6 @@ explain a failure instead of dumping a traceback. Compatible with Selenium <= 4.
 
 import logging
 import os
-import shutil
 
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
@@ -24,24 +23,17 @@ EXPLANATIONS = [
 	("chrome instance exited", [
 		"Chrome exited during startup, before the driver could connect to it.",
 		"Common causes: this profile is open in another Chrome window, a lock left",
-		"behind by a browser that was killed, or a profile directory Chrome cannot",
-		"write to. Run 'pkill -f chromium' and try again.",
+		"behind by a browser that was killed.",
 	]),
 	("cannot create default profile directory", [
-		"Chrome could not create the profile directory. Check that the current user",
-		"can write to it without administrator rights.",
+		"Chrome could not create the profile directory. Check file permissions.",
 	]),
 	("still attached to a running", [
-		"This profile is already open in another Chrome window, including one left",
-		"over from a previous run or held by a container. Close it and try again.",
-	]),
-	("only supports chrome version", [
-		"chromedriver and Chrome versions do not match. Update chromedriver to your",
-		"Chrome version, or remove the old one from PATH / CHROMEDRIVER_PATH.",
+		"This profile is already open in another Chrome window.",
 	]),
 	("session not created", [
-		"The session failed to open. This often happens if an old Edge data file",
-		"is corrupting Chrome, or a lock file is active. Try wiping your data-dir.",
+		"The session failed to open. Ensure no orphan lock files are running:",
+		"rm -rf /data/data/com.termux/files/home/rewards-farmer-chrome-support/chrome-data-dir/*/SingletonLock",
 	]),
 ]
 
@@ -49,13 +41,15 @@ EXPLANATIONS = [
 def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 	options = webdriver.ChromeOptions()
 
-	options.add_experimental_option("excludeSwitches", ["enable-automation"])
-	options.add_experimental_option("useAutomationExtension", False)
+	# --- FIXING CHROME 135+ REJECTIONS ---
+	# We comment out the automation exclusion blocks. Modern Chromium versions
+	# throw 'session not created' when this parameter is mixed with explicit profiles.
+	# options.add_experimental_option("excludeSwitches", ["enable-automation"])
+	# options.add_experimental_option("useAutomationExtension", False)
+	
 	options.add_argument("--disable-blink-features=AutomationControlled")
 	
-	# --- FIXING PROFILE CORRUPTION ---
-	# We redirect Chrome to use its own isolated chrome-specific profiles directory
-	# instead of reading the broken/pre-existing Edge profile configuration.
+	# Point to an isolated profile folder to completely avoid legacy Edge metadata
 	base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	chrome_data_dir = os.path.join(base_dir, "chrome-data-dir", account.name)
 	
@@ -76,10 +70,10 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
 	)
 
-	# In Selenium 4.9.1, binary location defaults inside Termux bin path
+	# Direct pathing constraints
 	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
 
-	# Headless parameters optimized for stable low-memory loops
+	# Headless parameters optimized for stable Android containers
 	options.add_argument("--headless=new")
 	options.add_argument("--window-size=1920,1080")
 	options.add_argument("--no-sandbox")             
@@ -92,23 +86,15 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 
 
 def build_service() -> Service:
-	# Rely directly on Termux system pathing to avoid custom binary mismatched states
 	chromedriver_path = "/data/data/com.termux/files/usr/bin/chromedriver"
 	return Service(executable_path=chromedriver_path)
 
 
 def explain(exc: Exception) -> list[str]:
 	message = str(exc).lower()
-	if "chromedriver" in message or "executable need to be in path" in message:
-		return [
-			"Selenium could not find chromedriver or Chromium on this machine.",
-			"Make sure you ran 'pkg install chromium' inside your Termux terminal.",
-		]
-
 	for needle, lines in EXPLANATIONS:
 		if needle in message:
 			return lines
-
 	return ["The driver's message is below; it did not match a known cause."]
 
 
