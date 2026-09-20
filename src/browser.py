@@ -32,8 +32,7 @@ EXPLANATIONS = [
 		"This profile is already open in another Chrome window.",
 	]),
 	("session not created", [
-		"The session failed to open. Ensure no orphan lock files are running:",
-		"rm -rf /data/data/com.termux/files/home/rewards-farmer-chrome-support/chrome-data-dir/*/SingletonLock",
+		"The session failed to open. Wiping the isolated chrome directory will fix it.",
 	]),
 ]
 
@@ -41,28 +40,24 @@ EXPLANATIONS = [
 def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 	options = webdriver.ChromeOptions()
 
-	# --- FIXING CHROME 135+ REJECTIONS ---
-	# We comment out the automation exclusion blocks. Modern Chromium versions
-	# throw 'session not created' when this parameter is mixed with explicit profiles.
-	# options.add_experimental_option("excludeSwitches", ["enable-automation"])
-	# options.add_experimental_option("useAutomationExtension", False)
-	
 	options.add_argument("--disable-blink-features=AutomationControlled")
 	
-	# Point to an isolated profile folder to completely avoid legacy Edge metadata
+	# --- FIXING THE PROFILE ALLOCATION CONFLICT ---
+	# We merge the user data structure directory specifically by account name,
+	# and we DO NOT append a separate --profile-directory flag to avoid conflicts.
 	base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	chrome_data_dir = os.path.join(base_dir, "chrome-data-dir", account.name)
 	
-	# Clear out any leftover lock files dynamically on initialization
-	lock_file = os.path.join(chrome_data_dir, "SingletonLock")
-	if os.path.islink(lock_file) or os.path.exists(lock_file):
-		try:
-			os.unlink(lock_file)
-		except Exception:
-			pass
+	# Instantly drop stale filesystem lock hooks
+	for lock_name in ["SingletonLock", "SingletonSocket", "SingletonCookie"]:
+		lock_file = os.path.join(chrome_data_dir, lock_name)
+		if os.path.islink(lock_file) or os.path.exists(lock_file):
+			try:
+				os.unlink(lock_file)
+			except Exception:
+				pass
 
 	options.add_argument(f"--user-data-dir={chrome_data_dir}")
-	options.add_argument("--profile-directory=Default")
 
 	# Spoof User Agent to trick MS Rewards into treating Chromium like Edge
 	options.add_argument(
@@ -73,8 +68,8 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 	# Direct pathing constraints
 	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
 
-	# Headless parameters optimized for stable Android containers
-	options.add_argument("--headless=new")
+	# Headless parameters optimized for standard Android execution loops
+	options.add_argument("--headless")  # Fixed to standard string format for Termux stability
 	options.add_argument("--window-size=1920,1080")
 	options.add_argument("--no-sandbox")             
 	options.add_argument("--disable-dev-shm-usage")  
