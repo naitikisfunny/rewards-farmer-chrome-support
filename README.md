@@ -1,6 +1,6 @@
 # User0332/rewards-farmer
 
-Automation for MS Rewards based on [https://youtu.be/4qdPcMNaioA](https://youtu.be/4qdPcMNaioA).
+hi uhh i made this script to have chrome support so y'all can run this on termux mobile!
 
 # Running Instructions
 
