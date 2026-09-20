@@ -6,6 +6,7 @@ explain a failure instead of dumping a traceback. Compatible with Selenium <= 4.
 
 import logging
 import os
+import shutil
 
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
@@ -39,9 +40,8 @@ EXPLANATIONS = [
 		"Chrome version, or remove the old one from PATH / CHROMEDRIVER_PATH.",
 	]),
 	("session not created", [
-		"The session failed to open. This often happens in Termux if an old session",
-		"left behind a SingletonLock file. Run this command to fix it:",
-		"rm -rf /data/data/com.termux/files/home/rewards-farmer-chrome-support/data-dir/*/SingletonLock",
+		"The session failed to open. This often happens if an old Edge data file",
+		"is corrupting Chrome, or a lock file is active. Try wiping your data-dir.",
 	]),
 ]
 
@@ -52,8 +52,23 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 	options.add_experimental_option("excludeSwitches", ["enable-automation"])
 	options.add_experimental_option("useAutomationExtension", False)
 	options.add_argument("--disable-blink-features=AutomationControlled")
-	options.add_argument(f"--user-data-dir={account.user_data_dir}")
-	options.add_argument(f"--profile-directory={account.profile_name}")
+	
+	# --- FIXING PROFILE CORRUPTION ---
+	# We redirect Chrome to use its own isolated chrome-specific profiles directory
+	# instead of reading the broken/pre-existing Edge profile configuration.
+	base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	chrome_data_dir = os.path.join(base_dir, "chrome-data-dir", account.name)
+	
+	# Clear out any leftover lock files dynamically on initialization
+	lock_file = os.path.join(chrome_data_dir, "SingletonLock")
+	if os.path.islink(lock_file) or os.path.exists(lock_file):
+		try:
+			os.unlink(lock_file)
+		except Exception:
+			pass
+
+	options.add_argument(f"--user-data-dir={chrome_data_dir}")
+	options.add_argument("--profile-directory=Default")
 
 	# Spoof User Agent to trick MS Rewards into treating Chromium like Edge
 	options.add_argument(
@@ -61,47 +76,29 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
 	)
 
-	# Explicitly guide Selenium 4.9.1 to look for the Termux system Chromium
+	# In Selenium 4.9.1, binary location defaults inside Termux bin path
 	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
 
-	# Termux environment requires headless configurations to function properly
-	if HEADLESS or True:  # Overriding to True ensures it handles standard Termux CLI environments
-		options.add_argument("--headless=new")
-		options.add_argument("--window-size=1920,1080")
-		options.add_argument("--no-sandbox")             # Mandatory for Termux
-		options.add_argument("--disable-dev-shm-usage")  # Mandatory for Termux
-		options.add_argument("--disable-gpu")            # Added for headless stability
-		
-		# Port bridges for restricted Android loop interfaces
-		options.add_argument("--remote-debugging-port=9222")
-		options.add_argument("--disable-extensions")
+	# Headless parameters optimized for stable low-memory loops
+	options.add_argument("--headless=new")
+	options.add_argument("--window-size=1920,1080")
+	options.add_argument("--no-sandbox")             
+	options.add_argument("--disable-dev-shm-usage")  
+	options.add_argument("--disable-gpu")            
+	options.add_argument("--remote-debugging-port=9222")
+	options.add_argument("--disable-extensions")
 
 	return options
 
 
 def build_service() -> Service:
-	driver_log = os.environ.get("REWARDS_DRIVER_LOG")
-	
-	# Termux provides its own chromedriver package when installing chromium. 
-	# We pass this explicitly to bypass Selenium 4.9's automatic locator mechanics.
-	chromedriver_path = (
-		os.environ.get("CHROMEDRIVER_PATH") or 
-		os.environ.get("MSEDGEDRIVER_PATH") or 
-		"/data/data/com.termux/files/usr/bin/chromedriver"
-	)
-
-	return Service(
-		executable_path=chromedriver_path,
-		service_args=["--verbose"] if driver_log else None,
-		log_output=driver_log or None,
-	)
+	# Rely directly on Termux system pathing to avoid custom binary mismatched states
+	chromedriver_path = "/data/data/com.termux/files/usr/bin/chromedriver"
+	return Service(executable_path=chromedriver_path)
 
 
 def explain(exc: Exception) -> list[str]:
 	message = str(exc).lower()
-
-	# Since Selenium 4.9.1 handles generic driver errors globally through WebDriverException,
-	# we verify missing file logs inside the text trace.
 	if "chromedriver" in message or "executable need to be in path" in message:
 		return [
 			"Selenium could not find chromedriver or Chromium on this machine.",
@@ -118,16 +115,11 @@ def explain(exc: Exception) -> list[str]:
 def start_driver(account: accounts.Account):
 	"""A Chrome driver for the account, or None after logging why it failed."""
 	try:
-		# Correct implementation signature for Selenium 4.9.1
 		return webdriver.Chrome(options=build_options(account), service=build_service())
 	except WebDriverException as exc:
 		logger.error("[FAIL] %s: could not start Chrome with this profile.", account.name)
-		logger.error("       profile directory: %s", account.user_data_dir)
-
 		for line in explain(exc):
 			logger.error("       %s", line)
-
 		logger.error("       driver said: %s", log_utils.exception_summary(exc))
-
 		return None
 		
