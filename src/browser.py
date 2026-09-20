@@ -24,8 +24,7 @@ EXPLANATIONS = [
 		"Chrome exited during startup, before the driver could connect to it.",
 		"Common causes: this profile is open in another Chrome window, a lock left",
 		"behind by a browser that was killed, or a profile directory Chrome cannot",
-		"write to. Set REWARDS_DRIVER_LOG=chromedriver.log and run again; that",
-		"log has Chrome's own reason.",
+		"write to. Run 'pkill -f chromium' and try again.",
 	]),
 	("cannot create default profile directory", [
 		"Chrome could not create the profile directory. Check that the current user",
@@ -38,6 +37,11 @@ EXPLANATIONS = [
 	("only supports chrome version", [
 		"chromedriver and Chrome versions do not match. Update chromedriver to your",
 		"Chrome version, or remove the old one from PATH / CHROMEDRIVER_PATH.",
+	]),
+	("session not created", [
+		"The session failed to open. This often happens in Termux if an old session",
+		"left behind a SingletonLock file. Run this command to fix it:",
+		"rm -rf /data/data/com.termux/files/home/rewards-farmer-chrome-support/data-dir/*/SingletonLock",
 	]),
 ]
 
@@ -67,6 +71,10 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 		options.add_argument("--no-sandbox")             # Mandatory for Termux
 		options.add_argument("--disable-dev-shm-usage")  # Mandatory for Termux
 		options.add_argument("--disable-gpu")            # Added for headless stability
+		
+		# Port bridges for restricted Android loop interfaces
+		options.add_argument("--remote-debugging-port=9222")
+		options.add_argument("--disable-extensions")
 
 	return options
 
