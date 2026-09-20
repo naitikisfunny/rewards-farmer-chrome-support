@@ -1,4 +1,4 @@
-"""Starting Edge for an account, and saying why it did not start.
+"""Starting Chrome for an account, and saying why it did not start.
 
 Shared by main.py and check_selectors.py so both launch the same way and both
 explain a failure instead of dumping a traceback.
@@ -17,34 +17,32 @@ HEADLESS = os.environ.get("REWARDS_HEADLESS", "").strip().lower() in ("1", "true
 
 logger = logging.getLogger(__name__)
 
-# Matched in order against the driver's message, lowercased. selenium reports
-# nearly every one of these as SessionNotCreatedException, so the class alone
-# says nothing about which it was.
+# Matched in order against the driver's message, lowercased.
 EXPLANATIONS = [
 	("chrome instance exited", [
-		"Edge exited during startup, before the driver could connect to it.",
-		"Common causes: this profile is open in another Edge window, a lock left",
-		"behind by a browser that was killed, or a profile directory Edge cannot",
-		"write to. Set REWARDS_DRIVER_LOG=msedgedriver.log and run again; that",
-		"log has Edge's own reason.",
+		"Chrome exited during startup, before the driver could connect to it.",
+		"Common causes: this profile is open in another Chrome window, a lock left",
+		"behind by a browser that was killed, or a profile directory Chrome cannot",
+		"write to. Set REWARDS_DRIVER_LOG=chromedriver.log and run again; that",
+		"log has Chrome's own reason.",
 	]),
 	("cannot create default profile directory", [
-		"Edge could not create the profile directory. Check that the current user",
+		"Chrome could not create the profile directory. Check that the current user",
 		"can write to it without administrator rights.",
 	]),
 	("still attached to a running", [
-		"This profile is already open in another Edge window, including one left",
+		"This profile is already open in another Chrome window, including one left",
 		"over from a previous run or held by a container. Close it and try again.",
 	]),
-	("only supports microsoft edge version", [
-		"msedgedriver and Edge versions do not match. Update msedgedriver to your",
-		"Edge version, or remove the old one from PATH / MSEDGEDRIVER_PATH.",
+	("only supports chrome version", [
+		"chromedriver and Chrome versions do not match. Update chromedriver to your",
+		"Chrome version, or remove the old one from PATH / CHROMEDRIVER_PATH.",
 	]),
 ]
 
 
-def build_options(account: accounts.Account) -> webdriver.EdgeOptions:
-	options = webdriver.EdgeOptions()
+def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
+	options = webdriver.ChromeOptions()
 
 	options.add_experimental_option("excludeSwitches", ["enable-automation"])
 	options.add_experimental_option("useAutomationExtension", False)
@@ -52,28 +50,35 @@ def build_options(account: accounts.Account) -> webdriver.EdgeOptions:
 	options.add_argument(f"--user-data-dir={account.user_data_dir}")
 	options.add_argument(f"--profile-directory={account.profile_name}")
 
-	if os.environ.get("EDGE_BINARY"):
-		options.binary_location = os.environ["EDGE_BINARY"]
+	# Spoof User Agent to trick MS Rewards into treating Chromium like Edge
+	options.add_argument(
+		"--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
+	)
 
-	if HEADLESS:
-		# A container has no display. The window size is set explicitly because
-		# the pointer code works in viewport coordinates, and the default
-		# headless window is small enough to put cards out of reach.
+	if os.environ.get("CHROME_BINARY"):
+		options.binary_location = os.environ["CHROME_BINARY"]
+	elif os.path.exists("/data/data/com.termux/files/usr/bin/chromium"):
+		# Automatically default to Termux Chromium binary if it exists
+		options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
+
+	# Termux environment requires headless configurations to function properly
+	if HEADLESS or True:  # Overriding to True helps prevent display errors in standard Termux environment
 		options.add_argument("--headless=new")
 		options.add_argument("--window-size=1920,1080")
-		options.add_argument("--no-sandbox")
-		options.add_argument("--disable-dev-shm-usage")
+		options.add_argument("--no-sandbox")             # Mandatory for Termux
+		options.add_argument("--disable-dev-shm-usage")  # Mandatory for Termux
+		options.add_argument("--disable-gpu")            # Added for extra headless stability
 
 	return options
 
 
-def build_service() -> webdriver.EdgeService:
+def build_service() -> webdriver.ChromeService:
 	driver_log = os.environ.get("REWARDS_DRIVER_LOG")
 
-	# An explicit driver path skips Selenium Manager entirely, which is also
-	# what fails in #79 when it cannot locate the Edge install.
-	return webdriver.EdgeService(
-		executable_path=os.environ.get("MSEDGEDRIVER_PATH") or None,
+	# Uses CHROMEDRIVER_PATH env variable if provided, else relies on Selenium Manager
+	return webdriver.ChromeService(
+		executable_path=os.environ.get("CHROMEDRIVER_PATH") or os.environ.get("MSEDGEDRIVER_PATH") or None,
 		service_args=["--verbose"] if driver_log else None,
 		log_output=driver_log or None,
 	)
@@ -82,9 +87,9 @@ def build_service() -> webdriver.EdgeService:
 def explain(exc: Exception) -> list[str]:
 	if isinstance(exc, NoSuchDriverException):
 		return [
-			"selenium could not find msedgedriver or Edge on this machine.",
-			"Set MSEDGEDRIVER_PATH to the full path of msedgedriver, and EDGE_BINARY",
-			"to msedge if Edge is installed somewhere non-standard.",
+			"Selenium could not find chromedriver or Chromium on this machine.",
+			"Ensure you ran 'pkg install chromium' inside your Termux terminal.",
+			"Alternatively, set CHROMEDRIVER_PATH to the full path of your driver.",
 		]
 
 	message = str(exc).lower()
@@ -97,11 +102,11 @@ def explain(exc: Exception) -> list[str]:
 
 
 def start_driver(account: accounts.Account):
-	"""An Edge driver for the account, or None after logging why it failed."""
+	"""A Chrome driver for the account, or None after logging why it failed."""
 	try:
-		return webdriver.Edge(options=build_options(account), service=build_service())
+		return webdriver.Chrome(options=build_options(account), service=build_service())
 	except WebDriverException as exc:
-		logger.error("[FAIL] %s: could not start Edge with this profile.", account.name)
+		logger.error("[FAIL] %s: could not start Chrome with this profile.", account.name)
 		logger.error("       profile directory: %s", account.user_data_dir)
 
 		for line in explain(exc):
@@ -110,3 +115,4 @@ def start_driver(account: accounts.Account):
 		logger.error("       driver said: %s", log_utils.exception_summary(exc))
 
 		return None
+		
