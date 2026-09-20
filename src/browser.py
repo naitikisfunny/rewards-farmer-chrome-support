@@ -42,9 +42,7 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 
 	options.add_argument("--disable-blink-features=AutomationControlled")
 	
-	# --- FIXING THE PROFILE ALLOCATION CONFLICT ---
-	# We merge the user data structure directory specifically by account name,
-	# and we DO NOT append a separate --profile-directory flag to avoid conflicts.
+	# Isolated profile initialization directory setup
 	base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	chrome_data_dir = os.path.join(base_dir, "chrome-data-dir", account.name)
 	
@@ -65,17 +63,21 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
 	)
 
-	# Direct pathing constraints
+	# Direct pathing constraints for Termux packages
 	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
 
 	# Headless parameters optimized for standard Android execution loops
-	options.add_argument("--headless")  # Fixed to standard string format for Termux stability
+	options.add_argument("--headless")  # Force classic headless method for legacy driver support
 	options.add_argument("--window-size=1920,1080")
 	options.add_argument("--no-sandbox")             
 	options.add_argument("--disable-dev-shm-usage")  
 	options.add_argument("--disable-gpu")            
 	options.add_argument("--remote-debugging-port=9222")
 	options.add_argument("--disable-extensions")
+	
+	# CRITICAL FOR HEADLESS CRASH FIXES IN TERMUX:
+	options.add_argument("--disable-setuid-sandbox")
+	options.add_argument("--disable-dev-tools")
 
 	return options
 
