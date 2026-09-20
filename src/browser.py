@@ -63,9 +63,9 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
 	)
 
-	# Direct pathing constraints for Termux packages
-	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium"
-
+		# Direct pathing constraints for the Termux TUR package setup
+	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium-browser"
+	
 	# Headless parameters optimized for standard Android execution loops
 	options.add_argument("--headless")  # Force classic headless method for legacy driver support
 	options.add_argument("--window-size=1920,1080")
