@@ -6,6 +6,7 @@ explain a failure instead of dumping a traceback. Compatible with Selenium <= 4.
 
 import logging
 import os
+import json
 
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
@@ -57,16 +58,16 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 
 	options.add_argument(f"--user-data-dir={chrome_data_dir}")
 
-	# Spoof User Agent to trick MS Rewards into treating Chromium like Edge
+	# Spoof pure Desktop Windows Edge User Agent to bypass the mobile UI variants rejections
 	options.add_argument(
-		"--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-		"Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0"
+		"--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+		"Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
 	)
 
-		# Direct pathing constraints for the Termux TUR package setup
+	# Fixed target to the verified Termux TUR package executable symlink
 	options.binary_location = "/data/data/com.termux/files/usr/bin/chromium-browser"
-	
-	# Headless parameters optimized for standard Android execution loops
+
+	# Headless parameters optimized for stable Android execution loops
 	options.add_argument("--headless")  # Force classic headless method for legacy driver support
 	options.add_argument("--window-size=1920,1080")
 	options.add_argument("--no-sandbox")             
@@ -74,8 +75,6 @@ def build_options(account: accounts.Account) -> webdriver.ChromeOptions:
 	options.add_argument("--disable-gpu")            
 	options.add_argument("--remote-debugging-port=9222")
 	options.add_argument("--disable-extensions")
-	
-	# CRITICAL FOR HEADLESS CRASH FIXES IN TERMUX:
 	options.add_argument("--disable-setuid-sandbox")
 	options.add_argument("--disable-dev-tools")
 
@@ -98,7 +97,31 @@ def explain(exc: Exception) -> list[str]:
 def start_driver(account: accounts.Account):
 	"""A Chrome driver for the account, or None after logging why it failed."""
 	try:
-		return webdriver.Chrome(options=build_options(account), service=build_service())
+		driver = webdriver.Chrome(options=build_options(account), service=build_service())
+		
+		# --- HEADLESS COOKIE INJECTION LAYER ---
+		base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+		cookie_file = os.path.join(base_dir, "chrome-data-dir", f"{account.name}_cookies.json")
+		
+		if os.path.exists(cookie_file):
+			logger.info("%s: Injecting saved session cookies...", account.name)
+			# Browser must navigate to the domain first before domain cookies can be added
+			driver.get("https://live.com") 
+			
+			with open(cookie_file, "r") as f:
+				cookies = json.load(f)
+				for cookie in cookies:
+					if "sameSite" in cookie:
+						del cookie["sameSite"]
+					try:
+						driver.add_cookie(cookie)
+					except Exception:
+						pass
+			logger.info("%s: Session cookies injected successfully!", account.name)
+		else:
+			logger.warning("%s: No cookie file detected at %s. Running script without active authentication session.", account.name, cookie_file)
+			
+		return driver
 	except WebDriverException as exc:
 		logger.error("[FAIL] %s: could not start Chrome with this profile.", account.name)
 		for line in explain(exc):
